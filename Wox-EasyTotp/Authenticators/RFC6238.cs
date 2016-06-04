@@ -6,26 +6,33 @@ namespace Wox_EasyTotp.Authenticators
 	[Authenticator("TOTP RFC 6238 (Google, Microsoft, ...)", "Images/google.png")]
 	class RFC6238
 	{
-		static string GetCode(string sQuery)
+		static string GetCode(string sSecretKey)
 		{
-			long iInterval = GetInterval(DateTime.Now);
-
-			byte[] vHashData = DescryptTime(sQuery, (ulong)iInterval);
-
-			int iOffset = vHashData[vHashData.Length - 1] & 0xf;
-
-			int iTruncatedHash = 0;
-			for (int j = 0; j < 4; j++)
+			if (sSecretKey.Length >= 16)
 			{
-				iTruncatedHash <<= 8;
-				iTruncatedHash |= vHashData[iOffset + j];
+				try
+				{
+					long iInterval = GetInterval(DateTime.Now);
+					byte[] vHashData = DescryptTime(sSecretKey, (ulong)iInterval);
+
+					int iOffset = vHashData[vHashData.Length - 1] & 0xf;
+
+					int iTruncatedHash = 0;
+					for (int j = 0; j < 4; j++)
+					{
+						iTruncatedHash <<= 8;
+						iTruncatedHash |= vHashData[iOffset + j];
+					}
+
+					iTruncatedHash &= 0x7FFFFFFF;
+					iTruncatedHash %= 1000000;
+
+					string sCode = iTruncatedHash.ToString();
+					return sCode.PadLeft(6, '0');
+				}
+				catch { }
 			}
-
-			iTruncatedHash &= 0x7FFFFFFF;
-			iTruncatedHash %= 1000000;
-
-			string sCode = iTruncatedHash.ToString();
-			return sCode.PadLeft(6, '0');
+			return null;
 		}
 
 		static protected long GetInterval(DateTime oDateTime, int iIntervalSeconds = 30)
