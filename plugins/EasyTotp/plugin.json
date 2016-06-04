@@ -1,0 +1,12 @@
+{
+  "ID":"D7493168186F45B3858B5BF04DCDFF53",
+  "ActionKeyword":"*",
+  "Name":"TOTP generator",
+  "Description":"Generate double authentification code from TOTP secret code",
+  "Author":"thennequin",
+  "Version":"1.0.0",
+  "Language":"csharp",
+  "Website":"https://github.com/thennequin/Wox-EasyTotp",
+  "IcoPath": "Images\\app.png",
+  "ExecuteFileName":"Wox-EasyTotp.dll"
+}

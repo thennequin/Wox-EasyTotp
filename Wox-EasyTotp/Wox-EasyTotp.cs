@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Security.Cryptography;
+using System.Reflection;
 using System.Text;
 using System.Windows.Forms;
 
@@ -8,127 +8,75 @@ using Wox.Plugin;
 
 namespace Wox_EasyTotp
 {
-	public class Main : IPlugin//, IPluginI18n
+	public class Main : IPlugin
 	{
-		private PluginInitContext context;
+		class AuthenticatorInfo
+		{
+			public AuthenticatorInfo(string sName, string sIcon, MethodInfo oMethodInfo)
+			{
+				m_sName = sName;
+				m_sIcon = sIcon;
+				m_oMethodInfo = oMethodInfo;
+			}
+			public string m_sName;
+			public string m_sIcon;
+			public MethodInfo m_oMethodInfo;
+		}
+
+		private PluginInitContext m_oContext;
+		private List<AuthenticatorInfo> m_lMethods = new List<AuthenticatorInfo>();
 
 		public void Init(PluginInitContext context)
 		{
-			this.context = context;
+			this.m_oContext = context;
+
+			Assembly oAssembly = Assembly.GetAssembly(typeof(AuthenticatorAttribute));
+			foreach (Type oType in oAssembly.GetTypes())
+			{
+				object[] vAttributes = oType.GetCustomAttributes(typeof(AuthenticatorAttribute), false);
+				if (vAttributes.Length == 1)
+				{
+					MethodInfo oMethodInfo = oType.GetMethod("GetCode", BindingFlags.Static | BindingFlags.NonPublic);
+					if (null != oMethodInfo)
+					{
+						ParameterInfo[] vParameters = oMethodInfo.GetParameters();
+						if (oMethodInfo.ReturnType == typeof(string)
+							&& vParameters != null
+							&& vParameters.Length == 1
+							&& vParameters[0].ParameterType == typeof(string))
+						{
+							AuthenticatorAttribute oAttribute = (AuthenticatorAttribute)vAttributes[0];
+							m_lMethods.Add(new AuthenticatorInfo(oAttribute.m_sName, oAttribute.m_sIcon, oMethodInfo));
+						}
+					}
+				}
+			}
 		}
 
 		public List<Result> Query(Query query)
 		{
 			List<Result> results = new List<Result>();
 
-			if (query.RawQuery.Length >= 16)
+			object[] oParams = new object[] { query.RawQuery };
+			foreach (AuthenticatorInfo oInfo in m_lMethods)
 			{
-				try
+				string sCodeRes = (string)oInfo.m_oMethodInfo.Invoke(null, oParams);
+				if (sCodeRes != null)
 				{
-					long iInterval = GetInterval(DateTime.Now);
-
-					byte[] hash = DescryptTime(query.RawQuery, (ulong)iInterval);
-					string sCode = GetClassicCode(hash);
 					results.Add(new Result()
 					{
-						Title = sCode,
-						SubTitle = "TOTP - Classic",
-						IcoPath = "Images\\lock.png",  //relative path to your plugin directory
+						Title = sCodeRes,
+						SubTitle = oInfo.m_sName,
+						IcoPath = oInfo.m_sIcon,
 						Action = e =>
 						{
-							Clipboard.SetText(sCode);
+							Clipboard.SetText(sCodeRes);
 							return true;
 						}
 					});
-
-					sCode = GetSteamCode(hash);
-					results.Add(new Result()
-					{
-						Title = sCode,
-						SubTitle = "TOTP - Steam",
-						IcoPath = "Images\\lock.png",  //relative path to your plugin directory
-						Action = e =>
-						{
-							Clipboard.SetText(sCode);
-							return true;
-						}
-					});
-
 				}
-				catch (Exception e)
-				{ }
 			}
-
 			return results;
-		}
-
-		private long GetInterval(DateTime dateTime, int iIntervalSeconds = 30)
-		{
-			TimeSpan ts = (dateTime.ToUniversalTime() - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc));
-			return (long)ts.TotalSeconds / iIntervalSeconds;
-		}
-
-
-		byte[] DescryptTime(string secret, ulong challengeValue)
-		{
-			ulong chlg = challengeValue;
-			byte[] challenge = new byte[8];
-			for (int j = 7; j >= 0; j--)
-			{
-				challenge[j] = (byte)((int)chlg & 0xff);
-				chlg >>= 8;
-			}
-
-			var key = Base32Encoding.ToBytes(secret);
-			for (int i = secret.Length; i < key.Length; i++)
-			{
-				key[i] = 0;
-			}
-
-			HMACSHA1 mac = new HMACSHA1(key);
-			return mac.ComputeHash(challenge);
-		}
-
-		protected string GetClassicCode(byte[] hash)
-		{
-			int offset = hash[hash.Length - 1] & 0xf;
-
-			int truncatedHash = 0;
-			for (int j = 0; j < 4; j++)
-			{
-				truncatedHash <<= 8;
-				truncatedHash |= hash[offset + j];
-			}
-
-			truncatedHash &= 0x7FFFFFFF;
-			truncatedHash %= 1000000;
-
-			string code = truncatedHash.ToString();
-			return code.PadLeft(6, '0');
-		}
-
-		protected string GetSteamCode(byte[] hash)
-		{
-			int start = hash[19] & 0x0f;
-
-			// extract those 4 bytes
-			byte[] bytes = new byte[4];
-			Array.Copy(hash, start, bytes, 0, 4);
-			if (BitConverter.IsLittleEndian)
-			{
-				Array.Reverse(bytes);
-			}
-			uint fullcode = BitConverter.ToUInt32(bytes, 0) & 0x7fffffff;
-
-			const string sSteamChars = "23456789BCDFGHJKMNPQRTVWXY";
-			StringBuilder code = new StringBuilder();
-			for (var i = 0; i < 5; i++)
-			{
-				code.Append(sSteamChars[(int)(fullcode % sSteamChars.Length)]);
-				fullcode /= (uint)sSteamChars.Length;
-			}
-
-			return code.ToString();
 		}
 	}
 }
