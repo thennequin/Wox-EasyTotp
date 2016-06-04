@@ -15,20 +15,8 @@ namespace Wox_EasyTotp.Authenticators
 					long iInterval = GetInterval(DateTime.Now);
 					byte[] vHashData = DescryptTime(sSecretKey, (ulong)iInterval);
 
-					int iOffset = vHashData[vHashData.Length - 1] & 0xf;
-
-					int iTruncatedHash = 0;
-					for (int j = 0; j < 4; j++)
-					{
-						iTruncatedHash <<= 8;
-						iTruncatedHash |= vHashData[iOffset + j];
-					}
-
-					iTruncatedHash &= 0x7FFFFFFF;
-					iTruncatedHash %= 1000000;
-
-					string sCode = iTruncatedHash.ToString();
-					return sCode.PadLeft(6, '0');
+					uint iFullCode = GetFullCode(vHashData);
+					return GetDigitsCode(iFullCode, 6);
 				}
 				catch { }
 			}
@@ -44,6 +32,17 @@ namespace Wox_EasyTotp.Authenticators
 
 		static protected byte[] DescryptTime(string sSecret, ulong iChallengeValue)
 		{
+			byte[] vKeyData = Base32Encoding.ToBytes(sSecret);
+			for (int i = sSecret.Length; i < vKeyData.Length; i++)
+			{
+				vKeyData[i] = 0;
+			}
+
+			return DescryptTime(vKeyData, iChallengeValue);
+		}
+
+		static protected byte[] DescryptTime(byte[] vKeyData, ulong iChallengeValue)
+		{
 			byte[] vChallengeData = new byte[8];
 			for (int j = 7; j >= 0; j--)
 			{
@@ -51,14 +50,29 @@ namespace Wox_EasyTotp.Authenticators
 				iChallengeValue >>= 8;
 			}
 
-			byte[] vKeyData = Base32Encoding.ToBytes(sSecret);
-			for (int i = sSecret.Length; i < vKeyData.Length; i++)
-			{
-				vKeyData[i] = 0;
-			}
-
 			HMACSHA1 oMac = new HMACSHA1(vKeyData);
 			return oMac.ComputeHash(vChallengeData);
+		}
+
+		static protected uint GetFullCode(byte[] vHashData)
+		{
+			int iStart = vHashData[vHashData.Length - 1] & 0xf;
+
+			byte[] vBytes = new byte[4];
+			Array.Copy(vHashData, iStart, vBytes, 0, 4);
+			if (BitConverter.IsLittleEndian)
+			{
+				Array.Reverse(vBytes);
+			}
+
+			return BitConverter.ToUInt32(vBytes, 0) & 0x7fffffff;
+		}
+
+		static protected string GetDigitsCode(uint iFullCode, int iDigitCount)
+		{
+			uint iCodeMask = (uint)Math.Pow(10, iDigitCount);
+			string sFormat = new string('0', iDigitCount);
+			return (iFullCode % iCodeMask).ToString(sFormat);
 		}
 	}
 }
